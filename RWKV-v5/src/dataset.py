@@ -156,9 +156,9 @@ class MyDataset(Dataset):
                 z = [0] * ctx_len
                 z_sum = 0
                 to_un_mask = False
-                for i in range(3, ctx_len):
+                for i in range(1, ctx_len):
                     # un-mask after 53671='Response'
-                    if dix[i] == 53671:
+                    if dix[i-1] == 53671:
                         to_un_mask = True
                     # Mask after 0=end_of_doc
                     if dix[i-1] == 0:
@@ -166,7 +166,10 @@ class MyDataset(Dataset):
                     if to_un_mask:
                         z[i] = 1
                         z_sum += 1
-                assert z_sum > 0, f'Must keep at least one token unmasked: {dix}'
+                if z_sum == 0:
+                    print(f'Must keep at least one token unmasked: {dix}')
+                    print('Unmasked the last token')
+                    z[-1] = 1
 
                 z = torch.tensor(z, dtype=torch.bfloat16)
 
