@@ -38,7 +38,7 @@ class MyDataset(Dataset):
 
             if args.my_qa_mask > 0:
                 self.data_pile = None
-                self.data_pile_size = len(self.data_pile._bin_buffer) // self.data._index._dtype_size
+                self.data_pile_size = 0
             else:
                 self.data_pile = None
                 self.data_pile_size = 0
@@ -119,29 +119,18 @@ class MyDataset(Dataset):
             if args.my_pile_stage > 0:
                 ii = 1 + epoch * self.samples_per_epoch + (idx * world_size) + rank
 
-                if args.my_qa_mask > 0:
-                    ii_orig = ii
-                    if ii % 2 == 0:
-                        ii = -1
-                        data = self.data_pile
+                if args.my_pile_stage == 4 or ii < args.my_random_steps:
+                    # cheat: pick a random spot in dataset
+                    if args.my_pile_version == 1:
+                        i = np.random.randint(0, self.data_size - req_len)
                     else:
-                        ii = ii // 2
-                if data == self.data_pile:
-                    i = np.random.randint(0, self.data_pile_size - req_len)
+                        i = np.random.randint(0, self.data_size)
                 else:
-                    if args.my_pile_stage == 4 or ii < args.my_random_steps:
-                        # cheat: pick a random spot in dataset
-                        if args.my_pile_version == 1:
-                            i = np.random.randint(0, self.data_size - req_len)
-                        else:
-                            i = np.random.randint(0, self.data_size)
-                    else:
-                        ii = ii - args.my_random_steps
-                        factor = (math.sqrt(5) - 1) / 2
-                        factor = int(magic_prime * factor)
-                        i = ((factor * ii * ii * ii) % magic_prime) * ctx_len
-                        i = i + args.my_pile_shift
-                # print(f"epoch {epoch} idx {idx} rank {rank}/{world_size} ii {ii} pos {round(i / self.data_size, 3)}")
+                    ii = ii - args.my_random_steps
+                    factor = (math.sqrt(5) - 1) / 2
+                    factor = int(magic_prime * factor)
+                    i = ((factor * ii * ii * ii) % magic_prime) * ctx_len
+                    i = i + args.my_pile_shift
             else:
                 # cheat: pick a random spot in dataset
                 i = np.random.randint(0, self.data_size - req_len)
@@ -164,23 +153,20 @@ class MyDataset(Dataset):
                 dix = [self.stoi[s] for s in data[i : i + req_len]]
 
             if args.my_qa_mask == 1:
-                if data == self.data_pile:
-                    z = [1] * ctx_len
-                else:
-                    z = [0] * ctx_len
-                    z_sum = 0
-                    isGood = False
-                    response_idx = -1
-                    for i in range(3, ctx_len):
-                        # Mask all tokens before 53671='Response'
-                        if dix[i] == 53671:
-                            response_idx = i
-                            break
-                    for i in range(response_idx, ctx_len):
+                z = [0] * ctx_len
+                z_sum = 0
+                to_un_mask = False
+                for i in range(3, ctx_len):
+                    # un-mask after 53671='Response'
+                    if dix[i] == 53671:
+                        to_un_mask = True
+                    # Mask after 0=end_of_doc
+                    if dix[i-1] == 0:
+                        to_un_mask = False
+                    if to_un_mask:
                         z[i] = 1
                         z_sum += 1
-
-                    assert z_sum > 0, 'Must keep at least one token unmasked'
+                assert z_sum > 0, f'Must keep at least one token unmasked: {dix}'
 
                 z = torch.tensor(z, dtype=torch.bfloat16)
 
