@@ -1,4 +1,5 @@
 *.txt
+!rwkv_vocab_v20230424.txt
 *.csv
 *.pth
 *.xlsb

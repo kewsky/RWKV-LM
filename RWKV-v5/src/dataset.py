@@ -37,8 +37,7 @@ class MyDataset(Dataset):
                 # rank_zero_info(self.data)
 
             if args.my_qa_mask > 0:
-                # self.data_pile = MMapIndexedDataset('/fsx/pile/pile_20B_tokenizer_text_document')
-                self.data_pile = MMapIndexedDataset('/fsx/pile_deduped/pile_0.87_deduped_text_document')
+                self.data_pile = None
                 self.data_pile_size = len(self.data_pile._bin_buffer) // self.data._index._dtype_size
             else:
                 self.data_pile = None
@@ -171,18 +170,18 @@ class MyDataset(Dataset):
                     z = [0] * ctx_len
                     z_sum = 0
                     isGood = False
+                    response_idx = -1
                     for i in range(3, ctx_len):
-                        if dix[i] == 27 and dix[i-1] == 34 and dix[i-2] == 187 and dix[i-3] == 187:
-                            isGood = True
-                        if dix[i] == 0:
-                            isGood = False
-                        if isGood:
-                            z[i] = 1
-                            z_sum += 1
-                    if z_sum == 0:
-                        z = [1] * ctx_len
-                        i = np.random.randint(0, self.data_pile_size - req_len)
-                        dix = self.data_pile.get(idx=0, offset=i, length=req_len).astype(int)
+                        # Mask all tokens before 53671='Response'
+                        if dix[i] == 53671:
+                            response_idx = i
+                            break
+                    for i in range(response_idx, ctx_len):
+                        z[i] = 1
+                        z_sum += 1
+
+                    assert z_sum > 0, 'Must keep at least one token unmasked'
+
                 z = torch.tensor(z, dtype=torch.bfloat16)
 
             x = torch.tensor(dix[:-1], dtype=torch.long)
